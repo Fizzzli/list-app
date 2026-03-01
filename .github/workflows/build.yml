@@ -39,14 +39,20 @@ jobs:
         echo "504667f4c0de7af15335c0e17245295e871484d7" >> $ANDROID_HOME/licenses/android-sdk-license
         echo "8933bad161af4178b1185d1a37fbf41ea5269c55" >> $ANDROID_HOME/licenses/android-sdk-license
         
+    - name: Enable AAPT2 daemon
+      run: |
+        echo "org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8" >> gradle.properties
+        echo "android.enableAapt2=true" >> gradle.properties
+        echo "android.buildCacheDir=${{ runner.temp }}/build-cache" >> gradle.properties
+        
     - name: Build Debug APK
       run: |
         chmod +x ./gradlew
         echo "ANDROID_HOME: $ANDROID_HOME"
         echo "JAVA_HOME: $JAVA_HOME"
         java -version
-        ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee build.log
-        cat build.log
+        ./gradlew assembleDebug --no-daemon --stacktrace -Dorg.gradle.jvmargs="-Xmx3072m" 2>&1 | tee build.log
+        tail -100 build.log
         
     - name: Upload APK
       uses: actions/upload-artifact@v4
