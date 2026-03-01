@@ -1,4 +1,4 @@
-name: Build APK
+name: Build & Test
 
 on:
   push:
@@ -23,6 +23,12 @@ jobs:
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v3
       
+    - name: Run Lint Check
+      run: ./gradlew lintDebug
+      
+    - name: Run Unit Tests
+      run: ./gradlew testDebugUnitTest
+      
     - name: Build Debug APK
       run: ./gradlew assembleDebug
       
@@ -44,6 +50,8 @@ jobs:
           Auto-built debug APK from commit ${{ github.sha }}
           
           Download: `app-debug.apk`
+          
+          [View CI logs](https://github.com/Fizzzli/list-app/actions/runs/${{ github.run_id }})
         prerelease: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
