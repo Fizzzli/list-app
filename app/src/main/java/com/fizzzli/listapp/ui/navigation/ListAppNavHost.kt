@@ -4,6 +4,8 @@ import androidx.compose.runtime.Composable
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.fizzzli.listapp.ui.screens.create.CreateListScreen
+import com.fizzzli.listapp.ui.screens.detail.ListDetailScreen
 import com.fizzzli.listapp.ui.screens.home.HomeScreen
 
 @Composable
@@ -25,16 +27,21 @@ fun ListAppNavHost() {
             )
         }
         
+        composable(Screen.CreateList.route) {
+            CreateListScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+        
         composable(
             route = Screen.ListDetail.route,
             arguments = Screen.ListDetail.arguments
         ) { backStackEntry ->
             val listId = backStackEntry.arguments?.getString("listId") ?: return@composable
-            // TODO: Implement ListDetailScreen
-        }
-        
-        composable(Screen.CreateList.route) {
-            // TODO: Implement CreateListScreen
+            ListDetailScreen(
+                listId = listId,
+                onNavigateBack = { navController.popBackStack() }
+            )
         }
     }
 }
