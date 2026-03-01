@@ -18,6 +18,11 @@ android {
         versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        
+        // Enable vector drawables support
+        vectorDrawables {
+            useSupportLibrary = true
+        }
     }
 
     buildTypes {
