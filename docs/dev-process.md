@@ -233,13 +233,13 @@ test: 添加单元测试
 **Milestone:** [Phase 1 - Local MVP](https://github.com/Fizzzli/list-app/milestone/1)
 
 **Sprint 1 Issues:**
-- [#1](https://github.com/Fizzzli/list-app/issues/1) 创建 Android 项目结构 (P0)
-- [#2](https://github.com/Fizzzli/list-app/issues/2) 配置 Jetpack Compose (P0)
-- [#3](https://github.com/Fizzzli/list-app/issues/3) 配置 Room 数据库 (P0)
-- [#4](https://github.com/Fizzzli/list-app/issues/4) 配置 Hilt 依赖注入 (P1)
-- [#5](https://github.com/Fizzzli/list-app/issues/5) 建立基础 UI 导航框架 (P1)
+- [#1](https://github.com/Fizzzli/list-app/issues/1) 创建 Android 项目结构 (P0) ✅ **DONE**
+- [#2](https://github.com/Fizzzli/list-app/issues/2) 配置 Jetpack Compose (P0) ✅ **DONE** (included in #1)
+- [#3](https://github.com/Fizzzli/list-app/issues/3) 配置 Room 数据库 (P0) ✅ **DONE** (included in #1)
+- [#4](https://github.com/Fizzzli/list-app/issues/4) 配置 Hilt 依赖注入 (P1) ✅ **DONE** (included in #1)
+- [#5](https://github.com/Fizzzli/list-app/issues/5) 建立基础 UI 导航框架 (P1) ✅ **DONE** (included in #1)
 
-**下一步:** 开始 Issue #1 开发
+**下一步:** 开始 Sprint 2 - 核心功能开发
 
 ---
 
