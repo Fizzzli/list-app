@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ListApp v2 - 测试套件</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/dexie@4/dist/dexie.js"></script>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #fafafa; }
+    .test-pass { @apply text-green-600; }
+    .test-fail { @apply text-red-600; }
+    .test-item { @apply p-3 border-b border-gray-200; }
+  </style>
+</head>
+<body class="p-6 max-w-3xl mx-auto">
+  <h1 class="text-2xl font-bold mb-4">ListApp v2 测试套件</h1>
+  
+  <div class="mb-4">
+    <button onclick="runAllTests()" class="bg-black text-white px-4 py-2 rounded hover:opacity-80">运行所有测试</button>
+    <button onclick="clearDB()" class="ml-2 border px-4 py-2 rounded hover:bg-gray-100">清空数据库</button>
+  </div>
+  
+  <div id="results"></div>
+  
+  <script>
+    const results = [];
+    
+    function assert(condition, message) {
+      if (condition) {
+        results.push({ pass: true, message });
+      } else {
+        results.push({ pass: false, message });
+      }
+    }
+    
+    function renderResults() {
+      const container = document.getElementById('results');
+      const passed = results.filter(r => r.pass).length;
+      const total = results.length;
+      
+      container.innerHTML = `
+        <div class="mb-4 p-4 bg-white rounded-lg border">
+          <p class="text-lg font-semibold">测试结果：${passed}/${total} 通过</p>
+          <p class="text-sm text-gray-500">通过率：${Math.round(passed/total*100)}%</p>
+        </div>
+        <div class="bg-white rounded-lg border">
+          ${results.map(r => `
+            <div class="test-item flex items-start gap-2">
+              <span class="${r.pass ? 'test-pass' : 'test-fail'}">${r.pass ? '✓' : '✗'}</span>
+              <span class="${r.pass ? 'text-gray-700' : 'text-red-600'}">${r.message}</span>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+    
+    const db = new Dexie('ListAppDB_v2');
+    db.version(1).stores({ lists: '++id, title, template, items' });
+    
+    // ========== v2.0 测试用例 ==========
+    
+    async function testCreateListWithTemplate() {
+      const templates = ['default', 'books', 'movies', 'restaurants', 'travel', 'shopping', 'goals'];
+      
+      for (const tpl of templates) {
+        const id = await db.lists.add({
+          title: `测试_${tpl}`,
+          template: tpl,
+          items: [],
+          lastModified: Date.now()
+        });
+        assert(id > 0, `创建${tpl}模板列表`);
+        
+        const list = await db.lists.get(id);
+        assert(list.template === tpl, `验证模板类型：${tpl}`);
+        
+        await db.lists.delete(id);
+      }
+    }
+    
+    async function testProgressCalculation() {
+      const id = await db.lists.add({
+        title: '进度测试',
+        template: 'goals',
+        items: [
+          { text: '任务 1', done: true },
+          { text: '任务 2', done: false },
+          { text: '任务 3', done: true },
+          { text: '任务 4', done: false }
+        ],
+        lastModified: Date.now()
+      });
+      
+      const list = await db.lists.get(id);
+      const total = list.items.length;
+      const done = list.items.filter(i => i.done).length;
+      const percent = Math.round(done/total*100);
+      
+      assert(total === 4, `总条目数：${total}`);
+      assert(done === 2, `已完成：${done}`);
+      assert(percent === 50, `完成度：${percent}%`);
+      
+      await db.lists.delete(id);
+    }
+    
+    async function testNaturalLanguageToday() {
+      const input = '买牛奶 今天';
+      const parsed = parseNaturalLanguage(input);
+      
+      assert(parsed.text === '买牛奶', `提取文本："${parsed.text}"`);
+      assert(parsed.dueDate !== null, '识别日期：今天');
+      
+      const dueDate = new Date(parsed.dueDate);
+      const today = new Date();
+      assert(dueDate.toDateString() === today.toDateString(), '日期正确：今天');
+    }
+    
+    async function testNaturalLanguageTomorrow() {
+      const input = '开会 明天';
+      const parsed = parseNaturalLanguage(input);
+      
+      assert(parsed.text === '开会', `提取文本："${parsed.text}"`);
+      
+      const dueDate = new Date(parsed.dueDate);
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      assert(dueDate.toDateString() === tomorrow.toDateString(), '日期正确：明天');
+    }
+    
+    async function testNaturalLanguagePriority() {
+      const input = '紧急报告 高优先级';
+      const parsed = parseNaturalLanguage(input);
+      
+      assert(parsed.text === '紧急报告', `提取文本："${parsed.text}"`);
+      assert(parsed.priority === 'high', `优先级：${parsed.priority}`);
+    }
+    
+    async function testNaturalLanguageRecurring() {
+      const input = '看书 每天';
+      const parsed = parseNaturalLanguage(input);
+      
+      assert(parsed.text === '看书', `提取文本："${parsed.text}"`);
+      assert(parsed.note === '每天重复', `重复标记：${parsed.note}`);
+    }
+    
+    async function testNaturalLanguageComplex() {
+      const input = '团队会议 明天 高优先级';
+      const parsed = parseNaturalLanguage(input);
+      
+      assert(parsed.text === '团队会议', `提取文本："${parsed.text}"`);
+      assert(parsed.priority === 'high', `优先级：${parsed.priority}`);
+      assert(parsed.dueDate !== null, '识别日期');
+    }
+    
+    async function testFilterByTemplate() {
+      // 创建不同模板的列表
+      await db.lists.add({ title: '书单 1', template: 'books', items: [], lastModified: Date.now() });
+      await db.lists.add({ title: '影单 1', template: 'movies', items: [], lastModified: Date.now() });
+      await db.lists.add({ title: '普通 1', template: 'default', items: [], lastModified: Date.now() });
+      
+      const all = await db.lists.toArray();
+      const books = all.filter(l => l.template === 'books');
+      const movies = all.filter(l => l.template === 'movies');
+      
+      assert(books.length >= 1, '筛选书单模板');
+      assert(movies.length >= 1, '筛选影单模板');
+      
+      // 清理
+      await db.lists.where('title').startsWith('书单').delete();
+      await db.lists.where('title').startsWith('影单').delete();
+      await db.lists.where('title').startsWith('普通').delete();
+    }
+    
+    async function testItemWithMetadata() {
+      const id = await db.lists.add({
+        title: '元数据测试',
+        template: 'default',
+        items: [{
+          text: '测试条目',
+          note: '备注信息',
+          done: false,
+          dueDate: new Date().toISOString(),
+          priority: 'high',
+          createdAt: Date.now()
+        }],
+        lastModified: Date.now()
+      });
+      
+      const list = await db.lists.get(id);
+      const item = list.items[0];
+      
+      assert(item.note === '备注信息', '备注字段');
+      assert(item.dueDate !== null, '日期字段');
+      assert(item.priority === 'high', '优先级字段');
+      
+      await db.lists.delete(id);
+    }
+    
+    async function testStatsCalculation() {
+      await db.lists.add({
+        title: '统计 1',
+        template: 'default',
+        items: [
+          { text: 'a', done: true },
+          { text: 'b', done: false }
+        ],
+        lastModified: Date.now()
+      });
+      
+      await db.lists.add({
+        title: '统计 2',
+        template: 'books',
+        items: [
+          { text: 'c', done: true },
+          { text: 'd', done: true },
+          { text: 'e', done: false }
+        ],
+        lastModified: Date.now()
+      });
+      
+      const all = await db.lists.toArray();
+      const totalLists = all.length;
+      const totalItems = all.reduce((sum, l) => sum + l.items.length, 0);
+      const completedItems = all.reduce((sum, l) => sum + l.items.filter(i => i.done).length, 0);
+      
+      assert(totalLists === 2, `列表总数：${totalLists}`);
+      assert(totalItems === 5, `条目总数：${totalItems}`);
+      assert(completedItems === 3, `已完成：${completedItems}`);
+      
+      await db.lists.where('title').startsWith('统计').delete();
+    }
+    
+    // ========== 辅助函数 ==========
+    
+    function parseNaturalLanguage(input) {
+      const result = { text: input, note: '', dueDate: null, priority: 'normal' };
+      
+      if (input.includes('高优先级') || input.includes('紧急') || input.includes('!')) {
+        result.priority = 'high';
+        result.text = result.text.replace(/高优先级 | 紧急|!/g, '').trim();
+      }
+      
+      const datePatterns = [
+        { pattern: /今天 | 今天/g, days: 0 },
+        { pattern: /明天 | 明天/g, days: 1 },
+        { pattern: /后天 | 后天/g, days: 2 },
+        { pattern: /下周 | 下周/g, days: 7 }
+      ];
+      
+      for (const { pattern, days } of datePatterns) {
+        if (pattern.test(input)) {
+          const date = new Date();
+          date.setDate(date.getDate() + days);
+          result.dueDate = date.toISOString();
+          result.text = result.text.replace(pattern, '').trim();
+          break;
+        }
+      }
+      
+      if (input.includes('每天') || input.includes('每日')) {
+        result.note = '每天重复';
+        result.text = result.text.replace(/每天 | 每日/g, '').trim();
+      }
+      if (input.includes('每周')) {
+        result.note = '每周重复';
+        result.text = result.text.replace(/每周/g, '').trim();
+      }
+      
+      return result;
+    }
+    
+    // ========== 运行测试 ==========
+    
+    async function runAllTests() {
+      results.length = 0;
+      renderResults();
+      
+      try {
+        await testCreateListWithTemplate();
+        await testProgressCalculation();
+        await testNaturalLanguageToday();
+        await testNaturalLanguageTomorrow();
+        await testNaturalLanguagePriority();
+        await testNaturalLanguageRecurring();
+        await testNaturalLanguageComplex();
+        await testFilterByTemplate();
+        await testItemWithMetadata();
+        await testStatsCalculation();
+      } catch (e) {
+        results.push({ pass: false, message: `测试错误：${e.message}` });
+      }
+      
+      renderResults();
+    }
+    
+    async function clearDB() {
+      if (confirm('确定清空所有数据？')) {
+        await db.lists.clear();
+        alert('数据库已清空');
+      }
+    }
+    
+    async function showStatus() {
+      const count = await db.lists.count();
+      document.getElementById('results').innerHTML = `
+        <div class="p-4 bg-white rounded-lg border mb-4">
+          <p class="text-gray-700">当前数据库中有 <strong>${count}</strong> 个列表</p>
+          <p class="text-sm text-gray-500 mt-1">v2.0 测试：模板系统、进度追踪、自然语言输入</p>
+        </div>
+      `;
+    }
+    
+    showStatus();
+  </script>
+</body>
+</html>
