@@ -1,0 +1,87 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g., v1.0.0)'
+        required: false
+
+env:
+  BUILD_STATUS_WEBHOOK: ${{ secrets.BUILD_STATUS_WEBHOOK }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: 'gradle'
+        
+    - name: Setup Gradle
+      uses: gradle/actions/setup-gradle@v3
+      with:
+        gradle-home-cache-cleanup: true
+        
+    - name: Accept Android licenses
+      run: |
+        mkdir -p $ANDROID_HOME/licenses
+        echo "24333f8a63b6825ea9c5514f83c2829b004d1fee" > $ANDROID_HOME/licenses/android-sdk-license
+        echo "d56f5187479451eabf01fb78af6dfcb131a6481e" >> $ANDROID_HOME/licenses/android-sdk-license
+        echo "24333f8a63b6825ea9c5514f83c2829b004d1fee" > $ANDROID_HOME/licenses/android-sdk-preview-license
+        echo "504667f4c0de7af15335c0e17245295e871484d7" >> $ANDROID_HOME/licenses/android-sdk-license
+        echo "8933bad161af4178b1185d1a37fbf41ea5269c55" >> $ANDROID_HOME/licenses/android-sdk-license
+        
+    - name: Enable AAPT2 daemon
+      run: |
+        echo "org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8" >> gradle.properties
+        echo "android.enableAapt2=true" >> gradle.properties
+        echo "android.buildCacheDir=${{ runner.temp }}/build-cache" >> gradle.properties
+        
+    - name: Build Debug APK
+      run: |
+        chmod +x ./gradlew
+        echo "ANDROID_HOME: $ANDROID_HOME"
+        echo "JAVA_HOME: $JAVA_HOME"
+        java -version
+        ./gradlew assembleDebug --no-daemon --stacktrace -Dorg.gradle.jvmargs="-Xmx3072m" 2>&1 | tee build.log
+        tail -100 build.log
+        
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: app-debug
+        path: app/build/outputs/apk/debug/app-debug.apk
+        retention-days: 30
+        if-no-files-found: error
+        
+    - name: Create Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: app/build/outputs/apk/debug/app-debug.apk
+        generate_release_notes: true
+        tag_name: ${{ github.event.inputs.version || github.ref_name }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Notify build status
+      if: always()
+      run: |
+        STATUS="${{ job.status }}"
+        RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        echo "Build $STATUS: $RUN_URL"
+        # If you have a webhook configured, send notification:
+        # curl -X POST -H "Content-Type: application/json" \
+        #   -d "{\"status\":\"$STATUS\",\"url\":\"$RUN_URL\"}" \
+        #   "$BUILD_STATUS_WEBHOOK" || true
