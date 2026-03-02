@@ -15,38 +15,22 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
       
-    - name: Setup pnpm
-      uses: pnpm/action-setup@v4
-      with:
-        version: 9
-        run_install: false
-        
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
         node-version: '20'
-        cache: 'pnpm'
-        cache-dependency-path: web/pnpm-lock.yaml
         
     - name: Install dependencies
       working-directory: ./web
-      run: |
-        pnpm config set registry https://registry.npmjs.org
-        pnpm install
+      run: npm ci
       
     - name: Build
       working-directory: ./web
-      run: pnpm build
+      run: npm run build
       
-    - name: Export to static HTML
-      working-directory: ./web
-      run: |
-        # Next.js 16 输出到 out 目录
-        npx next export -o ../dist
-        
     - name: Deploy to GitHub Pages
       uses: peaceiris/actions-gh-pages@v4
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_dir: ./dist
+        publish_dir: ./web/out
         force_orphan: true
