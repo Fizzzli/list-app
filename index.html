@@ -1,1 +1,584 @@
-<!DOCTYPE html><html lang="zh"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ListApp</title><script src="https://cdn.tailwindcss.com"></script><script src="https://unpkg.com/dexie@4/dist/dexie.js"></script></head><body class="min-h-screen bg-white"><header class="border-b p-4"><div class="max-w-5xl mx-auto flex justify-between items-center"><h1 class="text-xl font-bold">ListApp</h1><span class="text-sm text-gray-500">本地存储</span></div></header><main class="max-w-5xl mx-auto p-4"><div class="flex justify-between items-center mb-8"><h2 class="text-2xl font-semibold">我的列表</h2><button onclick="showDialog()" class="bg-black text-white px-4 py-2 rounded hover:opacity-80">创建列表</button></div><div id="lists" class="grid grid-cols-1 md:grid-cols-3 gap-4"></div><div id="empty" class="text-center py-12 text-gray-500 hidden"><p>暂无列表</p></div></main><div id="dlg" class="fixed inset-0 bg-black/50 hidden items-center justify-center" onclick="if(event.target===this)hideDialog()"><div class="bg-white p-6 rounded-lg w-full max-w-md mx-4"><h3 class="text-lg font-semibold mb-2">创建列表</h3><input id="inp" class="w-full border p-2 rounded mb-4" placeholder="列表名称" onkeydown="if(event.key==='Enter')create()"><div class="flex justify-end gap-2"><button onclick="hideDialog()" class="border px-4 py-2 rounded">取消</button><button onclick="create()" class="bg-black text-white px-4 py-2 rounded">创建</button></div></div></div><script>const db=new Dexie('ListApp');db.version(1).stores({lists:'++id,title,items'});let lists=[];async function load(){lists=await db.lists.toArray();render();}function render(){const el=document.getElementById('lists'),empty=document.getElementById('empty');if(!lists.length){el.innerHTML='';empty.classList.remove('hidden');return;}empty.classList.add('hidden');el.innerHTML=lists.map(l=>`<div class="border p-4 rounded hover:shadow cursor-pointer"><h3 class="font-semibold">${l.title}</h3><p class="text-sm text-gray-500">${(l.items||[]).length}项</p><div class="flex gap-2 mt-3"><button class="border px-3 py-1 text-sm rounded flex-1">查看</button><button onclick="event.stopPropagation();del(${l.id})" class="border px-3 py-1 text-sm rounded">删除</button></div></div>`).join('');}function showDialog(){document.getElementById('dlg').classList.remove('hidden');document.getElementById('dlg').classList.add('flex');document.getElementById('inp').focus();}function hideDialog(){document.getElementById('dlg').classList.add('hidden');document.getElementById('dlg').classList.remove('flex');document.getElementById('inp').value='';}async function create(){const v=document.getElementById('inp').value.trim();if(!v)return;await db.lists.add({title:v,items:[]});hideDialog();load();}async function del(id){if(!confirm('确定删除？'))return;await db.lists.delete(id);load();}load();</script></body></html>
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ListApp v2 - 智能列表工具</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/dexie@4/dist/dexie.js"></script>
+  <style>
+    :root { --bg: #fafafa; --fg: #1a1a1a; --border: #e5e5e5; --primary: #18181b; --muted: #71717a; --accent: #f4f4f5; }
+    body { background: var(--bg); color: var(--fg); font-family: system-ui, -apple-system, sans-serif; }
+    .btn { @apply px-4 py-2 bg-[var(--primary)] text-white rounded-md hover:opacity-90 transition-opacity text-sm font-medium; }
+    .btn-outline { @apply px-4 py-2 border border-[var(--border)] hover:bg-[var(--accent)] transition-colors text-sm font-medium rounded-md; }
+    .btn-ghost { @apply px-3 py-1.5 hover:bg-[var(--accent)] transition-colors text-sm rounded-md; }
+    .card { @apply bg-white border border-[var(--border)] rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer; }
+    .input { @apply w-full px-3 py-2 border border-[var(--border)] rounded-md focus:outline-none focus:ring-2 focus:ring-[var(--primary)] text-sm; }
+    .progress-bar { @apply h-2 bg-gray-200 rounded-full overflow-hidden; }
+    .progress-fill { @apply h-full bg-green-500 transition-all duration-300; }
+    
+    /* 模板颜色 */
+    .template-default { --tpl-color: #18181b; }
+    .template-books { --tpl-color: #dc2626; }
+    .template-movies { --tpl-color: #7c3aed; }
+    .template-restaurants { --tpl-color: #ea580c; }
+    .template-travel { --tpl-color: #059669; }
+    .template-shopping { --tpl-color: #db2777; }
+    .template-goals { --tpl-color: #2563eb; }
+  </style>
+</head>
+<body class="min-h-screen">
+  <!-- Header -->
+  <header class="bg-white border-b border-[var(--border)] sticky top-0 z-40">
+    <div class="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <button id="backBtn" onclick="goHome()" class="hidden text-lg">←</button>
+        <h1 class="text-lg font-bold">ListApp <span class="text-xs text-gray-400">v2.0</span></h1>
+      </div>
+      <div class="flex items-center gap-2">
+        <span id="status" class="text-xs text-[var(--muted)]"></span>
+        <button onclick="showSettings()" class="btn-ghost" title="设置">⚙️</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="max-w-5xl mx-auto px-4 py-6">
+    <!-- Home View -->
+    <div id="homeView">
+      <div class="flex items-center justify-between mb-6">
+        <h2 class="text-2xl font-semibold">我的列表</h2>
+        <button onclick="showTemplateDialog()" class="btn">+ 新建</button>
+      </div>
+      
+      <!-- Stats -->
+      <div id="statsBar" class="grid grid-cols-3 gap-4 mb-6">
+        <div class="bg-white border border-[var(--border)] rounded-lg p-3 text-center">
+          <p id="totalLists" class="text-2xl font-bold">0</p>
+          <p class="text-xs text-[var(--muted)]">列表</p>
+        </div>
+        <div class="bg-white border border-[var(--border)] rounded-lg p-3 text-center">
+          <p id="totalItems" class="text-2xl font-bold">0</p>
+          <p class="text-xs text-[var(--muted)]">条目</p>
+        </div>
+        <div class="bg-white border border-[var(--border)] rounded-lg p-3 text-center">
+          <p id="completedItems" class="text-2xl font-bold">0</p>
+          <p class="text-xs text-[var(--muted)]">已完成</p>
+        </div>
+      </div>
+      
+      <!-- Template Filter -->
+      <div class="flex gap-2 mb-4 overflow-x-auto pb-2">
+        <button onclick="filterByTemplate('all')" class="btn-ghost whitespace-nowrap">全部</button>
+        <button onclick="filterByTemplate('books')" class="btn-ghost whitespace-nowrap">📚 书单</button>
+        <button onclick="filterByTemplate('movies')" class="btn-ghost whitespace-nowrap">🎬 影单</button>
+        <button onclick="filterByTemplate('restaurants')" class="btn-ghost whitespace-nowrap">🍽️ 餐厅</button>
+        <button onclick="filterByTemplate('travel')" class="btn-ghost whitespace-nowrap">✈️ 旅行</button>
+        <button onclick="filterByTemplate('shopping')" class="btn-ghost whitespace-nowrap">🛍️ 购物</button>
+        <button onclick="filterByTemplate('goals')" class="btn-ghost whitespace-nowrap">🎯 目标</button>
+      </div>
+      
+      <div id="listsGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+      <div id="emptyState" class="text-center py-16 text-[var(--muted)] hidden">
+        <p class="text-lg">暂无列表</p>
+        <p class="text-sm mt-1">点击上方按钮创建第一个列表</p>
+      </div>
+    </div>
+
+    <!-- Detail View -->
+    <div id="detailView" class="hidden">
+      <div class="bg-white border border-[var(--border)] rounded-lg p-4 mb-4">
+        <div class="flex items-start justify-between">
+          <div>
+            <h2 id="detailTitle" class="text-xl font-semibold"></h2>
+            <p id="detailMeta" class="text-sm text-[var(--muted)] mt-1"></p>
+          </div>
+          <span id="detailTemplate" class="text-2xl"></span>
+        </div>
+        <!-- Progress -->
+        <div class="mt-3">
+          <div class="flex justify-between text-xs text-[var(--muted)] mb-1">
+            <span>进度</span>
+            <span id="progressText">0%</span>
+          </div>
+          <div class="progress-bar">
+            <div id="progressBar" class="progress-fill" style="width: 0%"></div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Quick Add -->
+      <div class="bg-white border border-[var(--border)] rounded-lg p-3 mb-4">
+        <input id="quickAddInput" type="text" class="input" placeholder="快速添加 (支持自然语言：'买牛奶 明天' 或 '看书 每晚' 或 '会议 周一 9 点 高优先级')">
+        <p class="text-xs text-[var(--muted)] mt-2">💡 提示：支持自然语言，例如 "买牛奶 明天"、"看书 每晚"、"会议 周一 9 点 高优先级"</p>
+      </div>
+      
+      <!-- Filter -->
+      <div class="flex gap-2 mb-3">
+        <button onclick="filterItems('all')" class="btn-ghost text-xs">全部</button>
+        <button onclick="filterItems('active')" class="btn-ghost text-xs">未完成</button>
+        <button onclick="filterItems('done')" class="btn-ghost text-xs">已完成</button>
+      </div>
+      
+      <!-- Items List -->
+      <div class="bg-white border border-[var(--border)] rounded-lg overflow-hidden">
+        <div id="itemsList"></div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Template Dialog -->
+  <div id="templateDialog" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50" onclick="if(event.target===this)hideTemplateDialog()">
+    <div class="bg-white rounded-lg p-5 w-full max-w-lg mx-4">
+      <h3 class="text-lg font-semibold mb-1">创建新列表</h3>
+      <p class="text-sm text-[var(--muted)] mb-4">选择一个模板开始</p>
+      
+      <div class="grid grid-cols-2 gap-3 mb-4">
+        <button onclick="selectTemplate('default')" class="template-card border-2 border-gray-200 rounded-lg p-3 text-left hover:border-black transition-colors">
+          <span class="text-2xl">📝</span>
+          <p class="font-medium mt-1">普通列表</p>
+          <p class="text-xs text-gray-500">通用清单</p>
+        </button>
+        <button onclick="selectTemplate('books')" class="template-card border-2 border-gray-200 rounded-lg p-3 text-left hover:border-black transition-colors">
+          <span class="text-2xl">📚</span>
+          <p class="font-medium mt-1">书单</p>
+          <p class="text-xs text-gray-500">想读/在读/已读</p>
+        </button>
+        <button onclick="selectTemplate('movies')" class="template-card border-2 border-gray-200 rounded-lg p-3 text-left hover:border-black transition-colors">
+          <span class="text-2xl">🎬</span>
+          <p class="font-medium mt-1">影单</p>
+          <p class="text-xs text-gray-500">想看/在看/已看</p>
+        </button>
+        <button onclick="selectTemplate('restaurants')" class="template-card border-2 border-gray-200 rounded-lg p-3 text-left hover:border-black transition-colors">
+          <span class="text-2xl">🍽️</span>
+          <p class="font-medium mt-1">餐厅</p>
+          <p class="text-xs text-gray-500">想去/已去/收藏</p>
+        </button>
+        <button onclick="selectTemplate('travel')" class="template-card border-2 border-gray-200 rounded-lg p-3 text-left hover:border-black transition-colors">
+          <span class="text-2xl">✈️</span>
+          <p class="font-medium mt-1">旅行</p>
+          <p class="text-xs text-gray-500">目的地/行程</p>
+        </button>
+        <button onclick="selectTemplate('shopping')" class="template-card border-2 border-gray-200 rounded-lg p-3 text-left hover:border-black transition-colors">
+          <span class="text-2xl">🛍️</span>
+          <p class="font-medium mt-1">购物</p>
+          <p class="text-xs text-gray-500">想买/已买</p>
+        </button>
+        <button onclick="selectTemplate('goals')" class="template-card border-2 border-gray-200 rounded-lg p-3 text-left hover:border-black transition-colors col-span-2">
+          <span class="text-2xl">🎯</span>
+          <p class="font-medium mt-1">目标</p>
+          <p class="text-xs text-gray-500">年度目标/习惯养成</p>
+        </button>
+      </div>
+      
+      <input id="listTitleInput" type="text" class="input mb-4" placeholder="给列表起个名字..." />
+      <div class="flex justify-end gap-2">
+        <button onclick="hideTemplateDialog()" class="btn-outline">取消</button>
+        <button onclick="createList()" class="btn">创建</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Dialog -->
+  <div id="settingsDialog" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50" onclick="if(event.target===this)hideSettings()">
+    <div class="bg-white rounded-lg p-5 w-full max-w-md mx-4">
+      <h3 class="text-lg font-semibold mb-4">设置</h3>
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium mb-1">数据管理</label>
+          <div class="flex gap-2">
+            <button onclick="exportData()" class="btn-outline flex-1">📥 导出</button>
+            <button onclick="showImportDialog()" class="btn-outline flex-1">📤 导入</button>
+          </div>
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">清空数据</label>
+          <button onclick="clearAllData()" class="btn-outline w-full text-red-500">⚠️ 删除所有数据</button>
+        </div>
+        <div class="pt-4 border-t">
+          <p class="text-xs text-[var(--muted)]">ListApp v2.0</p>
+          <p class="text-xs text-[var(--muted)]">数据保存在本地浏览器</p>
+        </div>
+      </div>
+      <div class="flex justify-end mt-4">
+        <button onclick="hideSettings()" class="btn">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ========== Database ==========
+    const db = new Dexie('ListAppDB_v2');
+    db.version(1).stores({ 
+      lists: '++id, title, template, lastModified',
+      settings: 'key'
+    });
+    
+    // ========== State ==========
+    let lists = [];
+    let currentListId = null;
+    let selectedTemplate = 'default';
+    let currentFilter = 'all';
+    let itemFilter = 'all';
+
+    // ========== Templates ==========
+    const templates = {
+      default: { icon: '📝', name: '普通列表', color: '#18181b', statuses: ['待办', '完成'] },
+      books: { icon: '📚', name: '书单', color: '#dc2626', statuses: ['想读', '在读', '已读'] },
+      movies: { icon: '🎬', name: '影单', color: '#7c3aed', statuses: ['想看', '在看', '已看'] },
+      restaurants: { icon: '🍽️', name: '餐厅', color: '#ea580c', statuses: ['想去', '已去', '收藏'] },
+      travel: { icon: '✈️', name: '旅行', color: '#059669', statuses: ['想去', '计划中', '已去'] },
+      shopping: { icon: '🛍️', name: '购物', color: '#db2777', statuses: ['想买', '已买'] },
+      goals: { icon: '🎯', name: '目标', color: '#2563eb', statuses: ['进行中', '已完成'] }
+    };
+
+    // ========== Navigation ==========
+    function goHome() {
+      document.getElementById('homeView').classList.remove('hidden');
+      document.getElementById('detailView').classList.add('hidden');
+      document.getElementById('backBtn').classList.add('hidden');
+      currentListId = null;
+      loadLists();
+    }
+
+    function goDetail(id) {
+      currentListId = id;
+      document.getElementById('homeView').classList.add('hidden');
+      document.getElementById('detailView').classList.remove('hidden');
+      document.getElementById('backBtn').classList.remove('hidden');
+      loadDetail(id);
+    }
+
+    // ========== List Operations ==========
+    async function loadLists() {
+      lists = await db.lists.toArray();
+      renderLists();
+      updateStats();
+    }
+
+    function filterByTemplate(template) {
+      currentFilter = template;
+      renderLists();
+    }
+
+    function renderLists() {
+      const grid = document.getElementById('listsGrid');
+      const empty = document.getElementById('emptyState');
+      
+      let filtered = lists;
+      if (currentFilter !== 'all') {
+        filtered = lists.filter(l => l.template === currentFilter);
+      }
+      
+      if (filtered.length === 0) {
+        grid.innerHTML = '';
+        empty.classList.remove('hidden');
+        return;
+      }
+      
+      empty.classList.add('hidden');
+      grid.innerHTML = filtered.map(list => {
+        const tpl = templates[list.template] || templates.default;
+        const total = (list.items || []).length;
+        const done = (list.items || []).filter(i => i.done).length;
+        const percent = total > 0 ? Math.round(done/total*100) : 0;
+        
+        return `
+          <div class="card border-l-4" style="border-left-color: ${tpl.color}" onclick="goDetail(${list.id})">
+            <div class="flex items-start justify-between">
+              <div class="flex-1">
+                <div class="flex items-center gap-2">
+                  <span class="text-xl">${tpl.icon}</span>
+                  <h3 class="font-semibold text-lg truncate">${escapeHtml(list.title)}</h3>
+                </div>
+                <p class="text-sm text-[var(--muted)] mt-2">${total} 个条目 · ${done} 已完成</p>
+              </div>
+            </div>
+            <div class="mt-3">
+              <div class="progress-bar">
+                <div class="progress-fill" style="width: ${percent}%; background: ${tpl.color}"></div>
+              </div>
+              <p class="text-xs text-[var(--muted)] mt-1">${percent}% 完成</p>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function updateStats() {
+      const totalLists = lists.length;
+      const totalItems = lists.reduce((sum, l) => sum + (l.items || []).length, 0);
+      const completedItems = lists.reduce((sum, l) => sum + (l.items || []).filter(i => i.done).length, 0);
+      
+      document.getElementById('totalLists').textContent = totalLists;
+      document.getElementById('totalItems').textContent = totalItems;
+      document.getElementById('completedItems').textContent = completedItems;
+    }
+
+    // ========== Template Dialog ==========
+    function showTemplateDialog() {
+      document.getElementById('templateDialog').classList.remove('hidden');
+      document.getElementById('templateDialog').classList.add('flex');
+      document.getElementById('listTitleInput').value = '';
+      selectedTemplate = 'default';
+    }
+
+    function hideTemplateDialog() {
+      document.getElementById('templateDialog').classList.add('hidden');
+      document.getElementById('templateDialog').classList.remove('flex');
+    }
+
+    function selectTemplate(tpl) {
+      selectedTemplate = tpl;
+      document.querySelectorAll('.template-card').forEach(el => {
+        el.classList.remove('border-black', 'border-2');
+        el.classList.add('border-gray-200');
+      });
+      event.currentTarget.classList.remove('border-gray-200');
+      event.currentTarget.classList.add('border-black', 'border-2');
+    }
+
+    async function createList() {
+      const title = document.getElementById('listTitleInput').value.trim();
+      if (!title) return;
+      
+      await db.lists.add({ 
+        title, 
+        template: selectedTemplate,
+        items: [], 
+        lastModified: Date.now() 
+      });
+      hideTemplateDialog();
+      loadLists();
+      showStatus('列表已创建');
+    }
+
+    async function deleteList(id) {
+      if (!confirm('确定要删除这个列表吗？')) return;
+      await db.lists.delete(id);
+      loadLists();
+      showStatus('列表已删除');
+    }
+
+    // ========== Detail View ==========
+    async function loadDetail(id) {
+      const list = await db.lists.get(id);
+      if (!list) return;
+      
+      const tpl = templates[list.template] || templates.default;
+      document.getElementById('detailTitle').textContent = list.title;
+      document.getElementById('detailTemplate').textContent = tpl.icon;
+      
+      const total = (list.items || []).length;
+      const done = (list.items || []).filter(i => i.done).length;
+      const percent = total > 0 ? Math.round(done/total*100) : 0;
+      
+      document.getElementById('detailMeta').textContent = `${total} 个条目 · ${done} 已完成`;
+      document.getElementById('progressText').textContent = `${percent}%`;
+      document.getElementById('progressBar').style.width = `${percent}%`;
+      document.getElementById('progressBar').style.background = tpl.color;
+      
+      renderItems(list);
+    }
+
+    function filterItems(filter) {
+      itemFilter = filter;
+      if (currentListId) loadDetail(currentListId);
+    }
+
+    function renderItems(list) {
+      const container = document.getElementById('itemsList');
+      let items = list.items || [];
+      
+      if (itemFilter === 'active') items = items.filter(i => !i.done);
+      if (itemFilter === 'done') items = items.filter(i => i.done);
+      
+      if (items.length === 0) {
+        container.innerHTML = '<div class="p-8 text-center text-[var(--muted)] text-sm">暂无条目</div>';
+        return;
+      }
+      
+      container.innerHTML = items.map((item, idx) => {
+        const originalIdx = list.items.findIndex(i => i.createdAt === item.createdAt);
+        return `
+          <div class="p-3 border-b border-[var(--border)] last:border-b-0 flex items-center gap-3 hover:bg-[var(--accent)] transition-colors">
+            <input type="checkbox" class="w-4 h-4 rounded" ${item.done ? 'checked' : ''} onchange="toggleItem(${originalIdx})">
+            <div class="flex-1">
+              <span class="${item.done ? 'line-through text-[var(--muted)]' : ''}">${escapeHtml(item.text)}</span>
+              ${item.note ? `<p class="text-xs text-[var(--muted)] mt-0.5">${escapeHtml(item.note)}</p>` : ''}
+              ${item.dueDate ? `<p class="text-xs text-orange-500 mt-0.5">📅 ${formatDate(item.dueDate)}</p>` : ''}
+              ${item.priority === 'high' ? `<p class="text-xs text-red-500 mt-0.5">⚠️ 高优先级</p>` : ''}
+            </div>
+            <button onclick="deleteItem(${originalIdx})" class="btn-ghost text-red-500">删除</button>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // ========== Quick Add with Natural Language ==========
+    document.getElementById('quickAddInput').addEventListener('keydown', async function(e) {
+      if (e.key === 'Enter') {
+        const text = this.value.trim();
+        if (!text || !currentListId) return;
+        
+        const parsed = parseNaturalLanguage(text);
+        
+        const list = await db.lists.get(currentListId);
+        if (!list) return;
+        
+        const items = list.items || [];
+        items.push({
+          text: parsed.text,
+          note: parsed.note || '',
+          done: false,
+          dueDate: parsed.dueDate || null,
+          priority: parsed.priority || 'normal',
+          createdAt: Date.now()
+        });
+        
+        await db.lists.update(currentListId, { items, lastModified: Date.now() });
+        this.value = '';
+        loadDetail(currentListId);
+        showStatus('条目已添加');
+      }
+    });
+
+    function parseNaturalLanguage(input) {
+      const result = { text: input, note: '', dueDate: null, priority: 'normal' };
+      
+      // 检测优先级
+      if (input.includes('高优先级') || input.includes('紧急') || input.includes('!')) {
+        result.priority = 'high';
+        result.text = result.text.replace(/高优先级 | 紧急|!/g, '').trim();
+      }
+      
+      // 检测日期
+      const datePatterns = [
+        { pattern: /今天 | 今天/g, days: 0 },
+        { pattern: /明天 | 明天/g, days: 1 },
+        { pattern: /后天 | 后天/g, days: 2 },
+        { pattern: /下周 | 下周/g, days: 7 },
+        { pattern: /下个月 | 下个月/g, days: 30 }
+      ];
+      
+      for (const { pattern, days } of datePatterns) {
+        if (pattern.test(input)) {
+          const date = new Date();
+          date.setDate(date.getDate() + days);
+          result.dueDate = date.toISOString();
+          result.text = result.text.replace(pattern, '').trim();
+          break;
+        }
+      }
+      
+      // 检测重复
+      if (input.includes('每天') || input.includes('每日')) {
+        result.note = '每天重复';
+        result.text = result.text.replace(/每天 | 每日/g, '').trim();
+      }
+      if (input.includes('每周') || input.includes('每星期')) {
+        result.note = '每周重复';
+        result.text = result.text.replace(/每周 | 每星期/g, '').trim();
+      }
+      if (input.includes('每月')) {
+        result.note = '每月重复';
+        result.text = result.text.replace(/每月/g, '').trim();
+      }
+      
+      return result;
+    }
+
+    function formatDate(isoString) {
+      const date = new Date(isoString);
+      const today = new Date();
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      
+      if (date.toDateString() === today.toDateString()) return '今天';
+      if (date.toDateString() === tomorrow.toDateString()) return '明天';
+      
+      return `${date.getMonth()+1}/${date.getDate()}`;
+    }
+
+    // ========== Item Operations ==========
+    async function toggleItem(idx) {
+      const list = await db.lists.get(currentListId);
+      if (!list) return;
+      list.items[idx].done = !list.items[idx].done;
+      await db.lists.update(currentListId, { items: list.items, lastModified: Date.now() });
+      loadDetail(currentListId);
+    }
+
+    async function deleteItem(idx) {
+      const list = await db.lists.get(currentListId);
+      if (!list) return;
+      list.items.splice(idx, 1);
+      await db.lists.update(currentListId, { items: list.items, lastModified: Date.now() });
+      loadDetail(currentListId);
+      showStatus('条目已删除');
+    }
+
+    // ========== Settings ==========
+    function showSettings() {
+      document.getElementById('settingsDialog').classList.remove('hidden');
+      document.getElementById('settingsDialog').classList.add('flex');
+    }
+
+    function hideSettings() {
+      document.getElementById('settingsDialog').classList.add('hidden');
+      document.getElementById('settingsDialog').classList.remove('flex');
+    }
+
+    function showImportDialog() {
+      const json = prompt('粘贴之前导出的 JSON 数据:');
+      if (!json) return;
+      try {
+        const data = JSON.parse(json);
+        if (!data.lists) throw new Error('无效格式');
+        data.lists.forEach(l => db.lists.add(l));
+        loadLists();
+        showStatus('导入成功');
+        hideSettings();
+      } catch(e) {
+        alert('导入失败：' + e.message);
+      }
+    }
+
+    async function exportData() {
+      const data = await db.lists.toArray();
+      const json = JSON.stringify({ lists: data, exportedAt: new Date().toISOString() }, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `listapp-${new Date().toISOString().slice(0,10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showStatus('已导出');
+    }
+
+    async function clearAllData() {
+      if (confirm('⚠️ 确定要删除所有数据吗？此操作不可恢复！')) {
+        await db.lists.clear();
+        location.reload();
+      }
+    }
+
+    // ========== Utilities ==========
+    function showStatus(msg) {
+      const el = document.getElementById('status');
+      el.textContent = msg;
+      setTimeout(() => el.textContent = '', 3000);
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // ========== Init ==========
+    loadLists();
+  </script>
+</body>
+</html>
