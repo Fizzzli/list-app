@@ -3,46 +3,45 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ListApp v3 - 智能列表</title>
+  <title>ListApp v4 - 智能列表</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/dexie@4/dist/dexie.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
   <style>
-    :root { --bg: #fafafa; --fg: #1a1a1a; --border: #e5e5e5; --primary: #18181b; --muted: #71717a; --accent: #f4f4f5; }
-    body { background: var(--bg); color: var(--fg); font-family: system-ui, -apple-system, sans-serif; }
-    .btn { @apply px-4 py-2 bg-[var(--primary)] text-white rounded-md hover:opacity-90 transition-opacity text-sm font-medium; }
+    :root { --bg: #fafafa; --fg: #1a1a1a; --border: #e5e5e5; --primary: #18181b; --muted: #71717a; --accent: #f4f4f5; --card-bg: #ffffff; }
+    body { background: var(--bg); color: var(--fg); font-family: system-ui, -apple-system, sans-serif; transition: background 0.3s, color 0.3s; }
+    body.dark { --bg: #09090b; --fg: #fafafa; --border: #27272a; --primary: #fafafa; --muted: #a1a1aa; --accent: #27272a; --card-bg: #18181b; }
+    .btn { @apply px-4 py-2 bg-[var(--primary)] text-white dark:bg-white dark:text-black rounded-md hover:opacity-90 transition-opacity text-sm font-medium; }
     .btn-outline { @apply px-4 py-2 border border-[var(--border)] hover:bg-[var(--accent)] transition-colors text-sm font-medium rounded-md; }
     .btn-ghost { @apply px-3 py-1.5 hover:bg-[var(--accent)] transition-colors text-sm rounded-md; }
     .btn-icon { @apply w-8 h-8 flex items-center justify-center rounded-md hover:bg-[var(--accent)] transition-colors; }
-    .card { @apply bg-white border border-[var(--border)] rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer; }
-    .input { @apply w-full px-3 py-2 border border-[var(--border)] rounded-md focus:outline-none focus:ring-2 focus:ring-[var(--primary)] text-sm; }
-    .progress-bar { @apply h-2 bg-gray-200 rounded-full overflow-hidden; }
+    .card { @apply bg-[var(--card-bg)] border border-[var(--border)] rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer; }
+    .input { @apply w-full px-3 py-2 border border-[var(--border)] rounded-md focus:outline-none focus:ring-2 focus:ring-[var(--primary)] text-sm bg-[var(--card-bg)]; }
+    .progress-bar { @apply h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden; }
     .progress-fill { @apply h-full transition-all duration-300; }
-    
-    /* 紧凑模式 */
+    .item-row { @apply p-3 border-b border-[var(--border)] last:border-0 flex items-start gap-3 hover:bg-[var(--accent)] cursor-grab active:cursor-grabbing; }
     .compact .item-row { @apply py-2; }
-    .compact .item-text { @apply text-sm; }
-    .compact .item-meta { @apply text-xs; }
     
-    /* 模板颜色 */
-    .tpl-default { --tpl-color: #18181b; }
-    .tpl-books { --tpl-color: #dc2626; }
-    .tpl-movies { --tpl-color: #7c3aed; }
-    .tpl-restaurants { --tpl-color: #ea580c; }
-    .tpl-travel { --tpl-color: #059669; }
-    .tpl-shopping { --tpl-color: #db2777; }
-    .tpl-goals { --tpl-color: #2563eb; }
+    /* 搜索高亮 */
+    .highlight { background: yellow; color: black; padding: 0 2px; border-radius: 2px; }
+    body.dark .highlight { background: #ca8a04; color: white; }
+    
+    /* 拖拽样式 */
+    .sortable-ghost { opacity: 0.4; background: var(--accent); }
+    .sortable-drag { cursor: grabbing; }
   </style>
 </head>
 <body class="min-h-screen">
   <!-- Header -->
-  <header class="bg-white border-b border-[var(--border)] sticky top-0 z-40">
+  <header class="bg-[var(--card-bg)] border-b border-[var(--border)] sticky top-0 z-40">
     <div class="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
       <div class="flex items-center gap-3">
         <button id="backBtn" onclick="goHome()" class="hidden text-lg">←</button>
-        <h1 class="text-lg font-bold">ListApp <span class="text-xs text-gray-400">v3.0</span></h1>
+        <h1 class="text-lg font-bold">ListApp <span class="text-xs text-gray-400">v4.0</span></h1>
       </div>
       <div class="flex items-center gap-1">
         <span id="status" class="text-xs text-[var(--muted)] mr-2"></span>
+        <button onclick="toggleDarkMode()" class="btn-icon" title="深色模式">🌓</button>
         <button onclick="toggleCompactMode()" class="btn-icon" title="紧凑模式">📐</button>
         <button onclick="showSettings()" class="btn-icon" title="设置">⚙️</button>
       </div>
@@ -53,6 +52,11 @@
   <main class="max-w-5xl mx-auto px-4 py-6" id="mainContainer">
     <!-- Home -->
     <div id="homeView">
+      <!-- Search -->
+      <div class="mb-4">
+        <input id="searchInput" type="text" class="input" placeholder="🔍 搜索列表或条目..." oninput="search()" onkeydown="if(event.key==='Escape'){this.value='';search();}">
+      </div>
+      
       <div class="flex items-center justify-between mb-6">
         <h2 class="text-2xl font-semibold">我的列表</h2>
         <button onclick="showTemplateDialog()" class="btn">+ 新建</button>
@@ -60,15 +64,15 @@
       
       <!-- Stats -->
       <div class="grid grid-cols-3 gap-4 mb-6">
-        <div class="bg-white border rounded-lg p-3 text-center">
+        <div class="bg-[var(--card-bg)] border rounded-lg p-3 text-center">
           <p id="totalLists" class="text-2xl font-bold">0</p>
           <p class="text-xs text-[var(--muted)]">列表</p>
         </div>
-        <div class="bg-white border rounded-lg p-3 text-center">
+        <div class="bg-[var(--card-bg)] border rounded-lg p-3 text-center">
           <p id="totalItems" class="text-2xl font-bold">0</p>
           <p class="text-xs text-[var(--muted)]">条目</p>
         </div>
-        <div class="bg-white border rounded-lg p-3 text-center">
+        <div class="bg-[var(--card-bg)] border rounded-lg p-3 text-center">
           <p id="completedItems" class="text-2xl font-bold">0</p>
           <p class="text-xs text-[var(--muted)]">已完成</p>
         </div>
@@ -94,7 +98,7 @@
 
     <!-- Detail -->
     <div id="detailView" class="hidden">
-      <div class="bg-white border rounded-lg p-4 mb-4">
+      <div class="bg-[var(--card-bg)] border rounded-lg p-4 mb-4">
         <div class="flex items-start justify-between">
           <div>
             <h2 id="detailTitle" class="text-xl font-semibold"></h2>
@@ -112,7 +116,7 @@
       </div>
       
       <!-- Quick Add -->
-      <div class="bg-white border rounded-lg p-3 mb-4">
+      <div class="bg-[var(--card-bg)] border rounded-lg p-3 mb-4">
         <input id="quickAddInput" type="text" class="input" placeholder="添加条目... (支持：明天、高优先级、每天)" onkeydown="if(event.key==='Enter')quickAdd()">
         <div class="flex items-center gap-2 mt-2">
           <button onclick="quickAdd()" class="btn text-xs py-1.5">添加</button>
@@ -134,23 +138,23 @@
         <button onclick="clearCompleted()" class="btn-ghost text-xs text-red-500 ml-auto">清理已完成</button>
       </div>
       
-      <div id="itemsList"></div>
+      <div id="itemsList" class="bg-[var(--card-bg)] border rounded-lg overflow-hidden"></div>
     </div>
   </main>
 
   <!-- Template Dialog -->
   <div id="templateDialog" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50" onclick="if(event.target===this)hideTemplateDialog()">
-    <div class="bg-white rounded-lg p-5 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+    <div class="bg-[var(--card-bg)] rounded-lg p-5 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
       <h3 class="text-lg font-semibold mb-1">创建新列表</h3>
       <p class="text-sm text-[var(--muted)] mb-4">选择模板</p>
       <div class="grid grid-cols-2 gap-3 mb-4">
-        <button onclick="selectTemplate('default')" class="tpl-card border-2 border-gray-200 rounded-lg p-3 text-left hover:border-black">📝 普通</button>
-        <button onclick="selectTemplate('books')" class="tpl-card border-2 border-gray-200 rounded-lg p-3 text-left hover:border-black">📚 书单</button>
-        <button onclick="selectTemplate('movies')" class="tpl-card border-2 border-gray-200 rounded-lg p-3 text-left hover:border-black">🎬 影单</button>
-        <button onclick="selectTemplate('restaurants')" class="tpl-card border-2 border-gray-200 rounded-lg p-3 text-left hover:border-black">🍽️ 餐厅</button>
-        <button onclick="selectTemplate('travel')" class="tpl-card border-2 border-gray-200 rounded-lg p-3 text-left hover:border-black">✈️ 旅行</button>
-        <button onclick="selectTemplate('shopping')" class="tpl-card border-2 border-gray-200 rounded-lg p-3 text-left hover:border-black">🛍️ 购物</button>
-        <button onclick="selectTemplate('goals')" class="tpl-card border-2 border-gray-200 rounded-lg p-3 text-left hover:border-black col-span-2">🎯 目标</button>
+        <button onclick="selectTemplate('default')" class="tpl-card border-2 border-gray-200 dark:border-gray-700 rounded-lg p-3 text-left hover:border-black dark:hover:border-white">📝 普通</button>
+        <button onclick="selectTemplate('books')" class="tpl-card border-2 border-gray-200 dark:border-gray-700 rounded-lg p-3 text-left hover:border-black dark:hover:border-white">📚 书单</button>
+        <button onclick="selectTemplate('movies')" class="tpl-card border-2 border-gray-200 dark:border-gray-700 rounded-lg p-3 text-left hover:border-black dark:hover:border-white">🎬 影单</button>
+        <button onclick="selectTemplate('restaurants')" class="tpl-card border-2 border-gray-200 dark:border-gray-700 rounded-lg p-3 text-left hover:border-black dark:hover:border-white">🍽️ 餐厅</button>
+        <button onclick="selectTemplate('travel')" class="tpl-card border-2 border-gray-200 dark:border-gray-700 rounded-lg p-3 text-left hover:border-black dark:hover:border-white">✈️ 旅行</button>
+        <button onclick="selectTemplate('shopping')" class="tpl-card border-2 border-gray-200 dark:border-gray-700 rounded-lg p-3 text-left hover:border-black dark:hover:border-white">🛍️ 购物</button>
+        <button onclick="selectTemplate('goals')" class="tpl-card border-2 border-gray-200 dark:border-gray-700 rounded-lg p-3 text-left hover:border-black dark:hover:border-white col-span-2">🎯 目标</button>
       </div>
       <input id="listTitleInput" type="text" class="input mb-4" placeholder="列表名称...">
       <div class="flex justify-end gap-2">
@@ -162,9 +166,13 @@
 
   <!-- Settings -->
   <div id="settingsDialog" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50" onclick="if(event.target===this)hideSettings()">
-    <div class="bg-white rounded-lg p-5 w-full max-w-md mx-4">
+    <div class="bg-[var(--card-bg)] rounded-lg p-5 w-full max-w-md mx-4">
       <h3 class="text-lg font-semibold mb-4">设置</h3>
       <div class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium mb-2">外观</label>
+          <button onclick="toggleDarkMode()" class="btn-outline w-full" id="darkModeBtn">切换深色/浅色模式</button>
+        </div>
         <div>
           <label class="block text-sm font-medium mb-2">显示模式</label>
           <button onclick="toggleCompactMode()" class="btn-outline w-full" id="compactBtn">切换紧凑/舒适模式</button>
@@ -177,6 +185,10 @@
           </div>
         </div>
         <button onclick="clearAllData()" class="btn-outline w-full text-red-500">⚠️ 清空所有数据</button>
+        <div class="pt-4 border-t border-[var(--border)]">
+          <p class="text-xs text-[var(--muted)]">ListApp v4.0</p>
+          <p class="text-xs text-[var(--muted)]">🔍 搜索 · 🌓 深色模式 · 📱 拖拽排序</p>
+        </div>
       </div>
       <div class="flex justify-end mt-4"><button onclick="hideSettings()" class="btn">关闭</button></div>
     </div>
@@ -184,12 +196,13 @@
 
   <script>
     // ========== DB ==========
-    const db = new Dexie('ListAppDB_v3');
+    const db = new Dexie('ListAppDB_v4');
     db.version(1).stores({ lists: '++id, title, template, lastModified', settings: 'key' });
     
     // ========== State ==========
-    let lists = [], currentListId = null, selectedTemplate = 'default', currentFilter = 'all', itemFilter = 'all';
-    let compactMode = false;
+    let lists = [], currentListId = null, selectedTemplate = 'default', currentFilter = 'all', itemFilter = 'all', searchQuery = '';
+    let compactMode = false, darkMode = false;
+    let itemsSortable = null;
 
     // ========== Templates ==========
     const templates = {
@@ -201,6 +214,22 @@
       shopping: { icon: '🛍️', name: '购物', color: '#db2777' },
       goals: { icon: '🎯', name: '目标', color: '#2563eb' }
     };
+
+    // ========== Init ==========
+    async function init() {
+      const settings = await db.settings.get('preferences');
+      if (settings) {
+        darkMode = settings.darkMode || false;
+        compactMode = settings.compactMode || false;
+      }
+      applyTheme();
+      loadLists();
+    }
+
+    function applyTheme() {
+      document.body.classList.toggle('dark', darkMode);
+      document.getElementById('mainContainer').classList.toggle('compact', compactMode);
+    }
 
     // ========== Nav ==========
     function goHome() { document.getElementById('homeView').classList.remove('hidden'); document.getElementById('detailView').classList.add('hidden'); document.getElementById('backBtn').classList.add('hidden'); currentListId = null; loadLists(); }
@@ -214,6 +243,10 @@
     function renderLists() {
       const grid = document.getElementById('listsGrid'), empty = document.getElementById('emptyState');
       let filtered = currentFilter === 'all' ? lists : lists.filter(l => l.template === currentFilter);
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        filtered = filtered.filter(l => l.title.toLowerCase().includes(q) || (l.items||[]).some(i => i.text.toLowerCase().includes(q)));
+      }
       if (!filtered.length) { grid.innerHTML = ''; empty.classList.remove('hidden'); return; }
       empty.classList.add('hidden');
       grid.innerHTML = filtered.map(list => {
@@ -221,7 +254,7 @@
         const total = (list.items||[]).length, done = (list.items||[]).filter(i=>i.done).length;
         const pct = total ? Math.round(done/total*100) : 0;
         return `<div class="card border-l-4" style="border-left-color:${tpl.color}" onclick="goDetail(${list.id})">
-          <div class="flex items-center gap-2"><span class="text-xl">${tpl.icon}</span><h3 class="font-semibold truncate flex-1">${escapeHtml(list.title)}</h3></div>
+          <div class="flex items-center gap-2"><span class="text-xl">${tpl.icon}</span><h3 class="font-semibold truncate flex-1">${highlightText(escapeHtml(list.title))}</h3></div>
           <p class="text-sm text-[var(--muted)] mt-2">${total}项 · ${done}完成</p>
           <div class="mt-3 progress-bar"><div class="progress-fill" style="width:${pct}%;background:${tpl.color}"></div></div>
         </div>`;
@@ -234,10 +267,18 @@
       document.getElementById('completedItems').textContent = lists.reduce((s,l)=>s+(l.items||[]).filter(i=>i.done).length,0);
     }
 
+    // ========== Search ==========
+    function search() { searchQuery = document.getElementById('searchInput').value.trim(); renderLists(); }
+    function highlightText(text) {
+      if (!searchQuery) return text;
+      const regex = new RegExp(`(${searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+      return text.replace(regex, '<span class="highlight">$1</span>');
+    }
+
     // ========== Template Dialog ==========
     function showTemplateDialog() { document.getElementById('templateDialog').classList.remove('hidden'); document.getElementById('templateDialog').classList.add('flex'); selectedTemplate='default'; document.getElementById('listTitleInput').value=''; }
     function hideTemplateDialog() { document.getElementById('templateDialog').classList.add('hidden'); document.getElementById('templateDialog').classList.remove('flex'); }
-    function selectTemplate(t) { selectedTemplate=t; document.querySelectorAll('.tpl-card').forEach(e=>e.classList.remove('border-black')); event.currentTarget.classList.add('border-black'); }
+    function selectTemplate(t) { selectedTemplate=t; document.querySelectorAll('.tpl-card').forEach(e=>e.classList.remove('border-black','dark:border-white')); event.currentTarget.classList.add('border-black','dark:border-white'); }
     
     async function createList() {
       const title = document.getElementById('listTitleInput').value.trim(); if(!title)return;
@@ -269,23 +310,39 @@
       container.innerHTML = items.map((item,idx)=>{
         const origIdx = list.items.findIndex(i=>i.createdAt===item.createdAt);
         const subtasks = item.subtasks||[];
-        const subDone = subtasks.filter(s=>s.done).length;
-        return `<div class="item-row p-3 border-b last:border-0 flex items-start gap-3 hover:bg-[var(--accent)] ${compactMode?'py-2':''}">
+        return `<div class="item-row" data-idx="${origIdx}">
+          <span class="text-gray-400 cursor-grab">⋮⋮</span>
           <input type="checkbox" class="w-4 h-4 mt-1" ${item.done?'checked':''} onchange="toggleItem(${origIdx})">
           <div class="flex-1 min-w-0">
             <div class="flex items-start justify-between gap-2">
-              <span class="item-text ${item.done?'line-through text-[var(--muted)]':''}">${escapeHtml(item.text)}</span>
+              <span class="${item.done?'line-through text-[var(--muted)]':''}">${highlightText(escapeHtml(item.text))}</span>
               <div class="flex items-center gap-1">
                 ${item.dueDate?`<span class="text-xs ${isOverdue(item.dueDate)?'text-red-500':'text-orange-500'}">📅 ${formatDate(item.dueDate)}</span>`:''}
                 ${item.priority==='high'?`<span class="text-xs text-red-500">⚠️</span>`:''}
                 <button onclick="deleteItem(${origIdx})" class="btn-icon text-red-500 w-6 h-6">🗑️</button>
               </div>
             </div>
-            ${item.note?`<p class="item-meta text-[var(--muted)] mt-0.5">${escapeHtml(item.note)}</p>`:''}
+            ${item.note?`<p class="text-xs text-[var(--muted)] mt-0.5">${escapeHtml(item.note)}</p>`:''}
             ${subtasks.length?`<div class="mt-2 ml-6 space-y-1">${subtasks.map((s,i)=>`<div class="flex items-center gap-2 text-sm"><input type="checkbox" class="w-3 h-3" ${s.done?'checked':''} onchange="toggleSubtask(${origIdx},${i})"><span class="${s.done?'line-through text-[var(--muted)]':''}">${escapeHtml(s.text)}</span></div>`).join('')}</div>`:''}
           </div>
         </div>`;
       }).join('');
+      
+      // Init Sortable
+      if (itemsSortable) itemsSortable.destroy();
+      itemsSortable = new Sortable(container, {
+        animation: 150,
+        ghostClass: 'sortable-ghost',
+        dragClass: 'sortable-drag',
+        onEnd: async (evt) => {
+          const list = await db.lists.get(currentListId);
+          if (!list) return;
+          const item = list.items.splice(evt.oldIndex, 1)[0];
+          list.items.splice(evt.newIndex, 0, item);
+          await db.lists.update(currentListId, { items: list.items, lastModified: Date.now() });
+          showStatus('顺序已更新');
+        }
+      });
     }
     
     function isOverdue(due) { return new Date(due) < new Date(); }
@@ -341,7 +398,13 @@
     // ========== Settings ==========
     function showSettings() { document.getElementById('settingsDialog').classList.remove('hidden'); document.getElementById('settingsDialog').classList.add('flex'); }
     function hideSettings() { document.getElementById('settingsDialog').classList.add('hidden'); document.getElementById('settingsDialog').classList.remove('flex'); }
-    function toggleCompactMode() { compactMode=!compactMode; document.getElementById('mainContainer').classList.toggle('compact'); showStatus(compactMode?'紧凑模式':'舒适模式'); }
+    
+    async function toggleDarkMode() { darkMode = !darkMode; applyTheme(); await savePreferences(); showStatus(darkMode?'深色模式':'浅色模式'); }
+    async function toggleCompactMode() { compactMode = !compactMode; applyTheme(); await savePreferences(); showStatus(compactMode?'紧凑模式':'舒适模式'); }
+    
+    async function savePreferences() {
+      await db.settings.put({ key: 'preferences', darkMode, compactMode });
+    }
     
     async function exportData() { const data=await db.lists.toArray(); const json=JSON.stringify({lists:data,exportedAt:new Date().toISOString()},null,2); const blob=new Blob([json],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a');a.href=url;a.download=`listapp-${new Date().toISOString().slice(0,10)}.json`;a.click();URL.revokeObjectURL(url);showStatus('已导出'); }
     function showImport() { const json=prompt('粘贴 JSON:'); if(!json)return; try{const data=JSON.parse(json);if(!data.lists)throw new Error('无效格式');data.lists.forEach(l=>db.lists.add(l));loadLists();showStatus('导入成功');hideSettings();}catch(e){alert('失败:'+e.message);} }
@@ -351,7 +414,7 @@
     function escapeHtml(t) { const d=document.createElement('div');d.textContent=t;return d.innerHTML; }
     
     // ========== Init ==========
-    loadLists();
+    init();
   </script>
 </body>
 </html>
