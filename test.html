@@ -236,16 +236,19 @@
     function parseNaturalLanguage(input) {
       const result = { text: input, note: '', dueDate: null, priority: 'normal' };
       
+      // 提取优先级（在修改text之前检查原始input）
       if (input.includes('高优先级') || input.includes('紧急') || input.includes('!')) {
         result.priority = 'high';
-        result.text = result.text.replace(/高优先级 | 紧急|!/g, '').trim();
       }
       
+      // 清理优先级标记
+      result.text = result.text.replace(/高优先级/g, '').replace(/紧急/g, '').replace(/!/g, '').trim();
+      
       const datePatterns = [
-        { pattern: /今天 | 今天/g, days: 0 },
-        { pattern: /明天 | 明天/g, days: 1 },
-        { pattern: /后天 | 后天/g, days: 2 },
-        { pattern: /下周 | 下周/g, days: 7 }
+        { pattern: /今天/g, days: 0 },
+        { pattern: /明天/g, days: 1 },
+        { pattern: /后天/g, days: 2 },
+        { pattern: /下周/g, days: 7 }
       ];
       
       for (const { pattern, days } of datePatterns) {
@@ -258,14 +261,16 @@
         }
       }
       
+      // 提取重复标记（在修改text之前检查原始input）
       if (input.includes('每天') || input.includes('每日')) {
         result.note = '每天重复';
-        result.text = result.text.replace(/每天 | 每日/g, '').trim();
       }
       if (input.includes('每周')) {
         result.note = '每周重复';
-        result.text = result.text.replace(/每周/g, '').trim();
       }
+      
+      // 清理重复标记
+      result.text = result.text.replace(/每天/g, '').replace(/每日/g, '').replace(/每周/g, '').trim();
       
       return result;
     }
