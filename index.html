@@ -178,6 +178,11 @@
           <button onclick="toggleCompactMode()" class="btn-outline w-full" id="compactBtn">切换紧凑/舒适模式</button>
         </div>
         <div>
+          <label class="block text-sm font-medium mb-2">通知</label>
+          <button onclick="toggleNotifications()" class="btn-outline w-full" id="notifBtn">🔔 浏览器通知提醒</button>
+          <p class="text-xs text-[var(--muted)] mt-1">完成条目时通知 · 检查逾期项目</p>
+        </div>
+        <div>
           <label class="block text-sm font-medium mb-2">数据</label>
           <div class="flex gap-2">
             <button onclick="exportData()" class="btn-outline flex-1">📥 导出</button>
@@ -203,6 +208,7 @@
     let lists = [], currentListId = null, selectedTemplate = 'default', currentFilter = 'all', itemFilter = 'all', searchQuery = '';
     let compactMode = false, darkMode = false;
     let itemsSortable = null;
+    let notificationsEnabled = false;
 
     // ========== Templates ==========
     const templates = {
@@ -221,9 +227,14 @@
       if (settings) {
         darkMode = settings.darkMode || false;
         compactMode = settings.compactMode || false;
+        notificationsEnabled = settings.notificationsEnabled || false;
       }
       applyTheme();
       loadLists();
+      // 检查通知权限状态
+      if (notificationsEnabled && Notification.permission === 'granted') {
+        checkOverdueItems();
+      }
     }
 
     function applyTheme() {
@@ -373,7 +384,7 @@
     }
 
     // ========== Item Ops ==========
-    async function toggleItem(idx) { const list=await db.lists.get(currentListId);if(!list)return;list.items[idx].done=!list.items[idx].done;await db.lists.update(currentListId,{items:list.items,lastModified:Date.now()});loadDetail(currentListId); }
+    async function toggleItem(idx) { const list=await db.lists.get(currentListId);if(!list)return;list.items[idx].done=!list.items[idx].done;await db.lists.update(currentListId,{items:list.items,lastModified:Date.now()});loadDetail(currentListId); if(list.items[idx].done){notifyItemCompleted(list.items[idx].text,list.title);} }
     async function deleteItem(idx) { const list=await db.lists.get(currentListId);if(!list)return;list.items.splice(idx,1);await db.lists.update(currentListId,{items:list.items,lastModified:Date.now()});loadDetail(currentListId);showStatus('已删除'); }
     async function toggleSubtask(itemIdx,subIdx) { const list=await db.lists.get(currentListId);if(!list)return;list.items[itemIdx].subtasks[subIdx].done=!list.items[itemIdx].subtasks[subIdx].done;await db.lists.update(currentListId,{items:list.items,lastModified:Date.now()});loadDetail(currentListId); }
     async function clearCompleted() { if(!confirm('删除所有已完成？'))return; const list=await db.lists.get(currentListId);if(!list)return;list.items=list.items.filter(i=>!i.done);await db.lists.update(currentListId,{items:list.items,lastModified:Date.now()});loadDetail(currentListId);showStatus('已清理'); }
@@ -401,14 +412,82 @@
     }
 
     // ========== Settings ==========
-    function showSettings() { document.getElementById('settingsDialog').classList.remove('hidden'); document.getElementById('settingsDialog').classList.add('flex'); }
+    function showSettings() {
+      document.getElementById('settingsDialog').classList.remove('hidden');
+      document.getElementById('settingsDialog').classList.add('flex');
+      // 更新通知按钮状态
+      const notifBtn = document.getElementById('notifBtn');
+      if (notifBtn) {
+        notifBtn.textContent = notificationsEnabled ? '🔕 已启用通知' : '🔔 启用通知提醒';
+      }
+    }
     function hideSettings() { document.getElementById('settingsDialog').classList.add('hidden'); document.getElementById('settingsDialog').classList.remove('flex'); }
     
     async function toggleDarkMode() { darkMode = !darkMode; applyTheme(); await savePreferences(); showStatus(darkMode?'深色模式':'浅色模式'); }
     async function toggleCompactMode() { compactMode = !compactMode; applyTheme(); await savePreferences(); showStatus(compactMode?'紧凑模式':'舒适模式'); }
     
     async function savePreferences() {
-      await db.settings.put({ key: 'preferences', darkMode, compactMode });
+      await db.settings.put({ key: 'preferences', darkMode, compactMode, notificationsEnabled });
+    }
+    
+    // ========== Notifications ==========
+    async function requestNotificationPermission() {
+      if (!('Notification' in window)) {
+        alert('您的浏览器不支持通知');
+        return;
+      }
+      const permission = await Notification.requestPermission();
+      if (permission === 'granted') {
+        notificationsEnabled = true;
+        await savePreferences();
+        showStatus('通知已启用');
+        checkOverdueItems();
+      } else if (permission === 'denied') {
+        showStatus('通知被拒绝');
+      }
+    }
+    
+    function sendNotification(title, options) {
+      if (!notificationsEnabled || Notification.permission !== 'granted') return;
+      new Notification(title, {
+        icon: '📝',
+        ...options,
+        timestamp: Date.now()
+      });
+    }
+    
+    function checkOverdueItems() {
+      const now = new Date();
+      lists.forEach(list => {
+        (list.items || []).forEach(item => {
+          if (item.dueDate && !item.done) {
+            const due = new Date(item.dueDate);
+            if (due < now) {
+              sendNotification('⏰ 逾期提醒', {
+                body: `${list.title}: ${item.text}`,
+                tag: `overdue-${item.createdAt}`
+              });
+            }
+          }
+        });
+      });
+    }
+    
+    function notifyItemCompleted(itemText, listTitle) {
+      sendNotification('✅ 完成!', {
+        body: itemText,
+        tag: `completed-${Date.now()}`
+      });
+    }
+    
+    async function toggleNotifications() {
+      if (notificationsEnabled) {
+        notificationsEnabled = false;
+        await savePreferences();
+        showStatus('通知已关闭');
+      } else {
+        await requestNotificationPermission();
+      }
     }
     
     async function exportData() { const data=await db.lists.toArray(); const json=JSON.stringify({lists:data,exportedAt:new Date().toISOString()},null,2); const blob=new Blob([json],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a');a.href=url;a.download=`listapp-${new Date().toISOString().slice(0,10)}.json`;a.click();URL.revokeObjectURL(url);showStatus('已导出'); }
