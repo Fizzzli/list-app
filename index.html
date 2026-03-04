@@ -381,10 +381,15 @@
     // ========== Natural Language ==========
     function parseNaturalLanguage(input) {
       const result = {text:input,note:'',dueDate:null,priority:'normal'};
-      if(input.includes('高优先级')||input.includes('紧急')||input.includes('!')){result.priority='high';result.text=result.text.replace(/高优先级 | 紧急|!/g,'').trim();}
-      [{p:/今天 | 今天/g,d:0},{p:/明天 | 明天/g,d:1},{p:/后天 | 后天/g,d:2},{p:/下周/g,d:7}].forEach(({p,d})=>{if(p.test(input)){const dt=new Date();dt.setDate(dt.getDate()+d);result.dueDate=dt.toISOString();result.text=result.text.replace(p,'').trim();}});
-      if(input.includes('每天')||input.includes('每日')){result.note='每天重复';result.text=result.text.replace(/每天 | 每日/g,'').trim();}
-      if(input.includes('每周')){result.note='每周重复';result.text=result.text.replace(/每周/g,'').trim();}
+      // 提取优先级
+      if(input.includes('高优先级')||input.includes('紧急')||input.includes('!')){result.priority='high';}
+      result.text=result.text.replace(/高优先级/g,'').replace(/紧急/g,'').replace(/!/g,'').trim();
+      // 提取日期
+      [{p:/今天/g,d:0},{p:/明天/g,d:1},{p:/后天/g,d:2},{p:/下周/g,d:7}].forEach(({p,d})=>{if(p.test(input)){const dt=new Date();dt.setDate(dt.getDate()+d);result.dueDate=dt.toISOString();result.text=result.text.replace(p,'').trim();}});
+      // 提取重复标记
+      if(input.includes('每天')||input.includes('每日')){result.note='每天重复';}
+      if(input.includes('每周')){result.note='每周重复';}
+      result.text=result.text.replace(/每天/g,'').replace(/每日/g,'').replace(/每周/g,'').trim();
       return result;
     }
     
