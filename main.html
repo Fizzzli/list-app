@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ListApp - 轻量级列表工具</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/dexie@4/dist/dexie.js"></script>
+  <style>
+    :root { --bg: #fafafa; --fg: #1a1a1a; --border: #e5e5e5; --primary: #18181b; --muted: #71717a; --accent: #f4f4f5; }
+    body { background: var(--bg); color: var(--fg); font-family: system-ui, -apple-system, sans-serif; }
+    .btn { @apply px-4 py-2 bg-[var(--primary)] text-white rounded-md hover:opacity-90 transition-opacity text-sm font-medium; }
+    .btn-outline { @apply px-4 py-2 border border-[var(--border)] hover:bg-[var(--accent)] transition-colors text-sm font-medium rounded-md; }
+    .btn-ghost { @apply px-3 py-1.5 hover:bg-[var(--accent)] transition-colors text-sm rounded-md; }
+    .card { @apply bg-white border border-[var(--border)] rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer; }
+    .input { @apply w-full px-3 py-2 border border-[var(--border)] rounded-md focus:outline-none focus:ring-2 focus:ring-[var(--primary)] text-sm; }
+    .checkbox { @apply w-4 h-4 rounded border-[var(--border)] text-[var(--primary)] focus:ring-[var(--primary)]; }
+  </style>
+</head>
+<body class="min-h-screen">
+  <!-- Header -->
+  <header class="bg-white border-b border-[var(--border)] sticky top-0 z-40">
+    <div class="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <button id="backBtn" onclick="goHome()" class="hidden text-lg">←</button>
+        <h1 class="text-lg font-bold">ListApp</h1>
+      </div>
+      <div class="flex items-center gap-2">
+        <span id="status" class="text-xs text-[var(--muted)]"></span>
+        <button onclick="exportData()" class="btn-ghost" title="导出">📥</button>
+        <button onclick="importData()" class="btn-ghost" title="导入">📤</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="max-w-5xl mx-auto px-4 py-6">
+    <!-- Home View -->
+    <div id="homeView">
+      <div class="flex items-center justify-between mb-6">
+        <h2 class="text-2xl font-semibold">我的列表</h2>
+        <button onclick="showListDialog()" class="btn">+ 创建列表</button>
+      </div>
+      <div id="listsGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+      <div id="emptyState" class="text-center py-16 text-[var(--muted)] hidden">
+        <p class="text-lg">暂无列表</p>
+        <p class="text-sm mt-1">点击上方按钮创建第一个列表</p>
+      </div>
+    </div>
+
+    <!-- Detail View -->
+    <div id="detailView" class="hidden">
+      <div class="bg-white border border-[var(--border)] rounded-lg p-4 mb-4">
+        <h2 id="detailTitle" class="text-xl font-semibold"></h2>
+        <p id="detailCount" class="text-sm text-[var(--muted)] mt-1"></p>
+      </div>
+      
+      <div class="bg-white border border-[var(--border)] rounded-lg overflow-hidden">
+        <div class="p-3 border-b border-[var(--border)] flex items-center gap-2">
+          <input id="newItemInput" type="text" class="input flex-1" placeholder="添加新条目..." onkeydown="if(event.key==='Enter')addItem()">
+          <button onclick="addItem()" class="btn">添加</button>
+        </div>
+        <div id="itemsList"></div>
+      </div>
+    </div>
+  </main>
+
+  <!-- List Dialog -->
+  <div id="listDialog" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50" onclick="if(event.target===this)hideListDialog()">
+    <div class="bg-white rounded-lg p-5 w-full max-w-md mx-4">
+      <h3 class="text-lg font-semibold mb-1">创建新列表</h3>
+      <p class="text-sm text-[var(--muted)] mb-4">记录你想做的任何事情</p>
+      <input id="listTitleInput" type="text" class="input mb-4" placeholder="例如：书单、餐厅清单、旅行计划..." />
+      <div class="flex justify-end gap-2">
+        <button onclick="hideListDialog()" class="btn-outline">取消</button>
+        <button onclick="createList()" class="btn">创建</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Import Dialog -->
+  <div id="importDialog" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50" onclick="if(event.target===this)hideImportDialog()">
+    <div class="bg-white rounded-lg p-5 w-full max-w-md mx-4">
+      <h3 class="text-lg font-semibold mb-1">导入数据</h3>
+      <p class="text-sm text-[var(--muted)] mb-4">粘贴之前导出的 JSON 数据</p>
+      <textarea id="importDataInput" class="input mb-4 h-32 font-mono text-xs" placeholder='{"lists":[...]}'></textarea>
+      <div class="flex justify-end gap-2">
+        <button onclick="hideImportDialog()" class="btn-outline">取消</button>
+        <button onclick="doImport()" class="btn">导入</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Database
+    const db = new Dexie('ListAppDB');
+    db.version(1).stores({ lists: '++id, title, lastModified' });
+    
+    // State
+    let lists = [];
+    let currentListId = null;
+
+    // ========== Navigation ==========
+    function goHome() {
+      document.getElementById('homeView').classList.remove('hidden');
+      document.getElementById('detailView').classList.add('hidden');
+      document.getElementById('backBtn').classList.add('hidden');
+      currentListId = null;
+      loadLists();
+    }
+
+    function goDetail(id) {
+      currentListId = id;
+      document.getElementById('homeView').classList.add('hidden');
+      document.getElementById('detailView').classList.remove('hidden');
+      document.getElementById('backBtn').classList.remove('hidden');
+      loadDetail(id);
+    }
+
+    // ========== List Operations ==========
+    async function loadLists() {
+      lists = await db.lists.toArray();
+      renderLists();
+    }
+
+    function renderLists() {
+      const grid = document.getElementById('listsGrid');
+      const empty = document.getElementById('emptyState');
+      
+      if (lists.length === 0) {
+        grid.innerHTML = '';
+        empty.classList.remove('hidden');
+        return;
+      }
+      
+      empty.classList.add('hidden');
+      grid.innerHTML = lists.map(list => `
+        <div class="card" onclick="goDetail(${list.id})">
+          <h3 class="font-semibold text-lg truncate">${escapeHtml(list.title)}</h3>
+          <p class="text-sm text-[var(--muted)] mt-1">${(list.items || []).length} 个条目</p>
+          <div class="flex gap-2 mt-4">
+            <button onclick="event.stopPropagation();editList(${list.id})" class="btn-outline flex-1">编辑</button>
+            <button onclick="event.stopPropagation();deleteList(${list.id})" class="btn-outline">删除</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function showListDialog() {
+      document.getElementById('listDialog').classList.remove('hidden');
+      document.getElementById('listDialog').classList.add('flex');
+      document.getElementById('listTitleInput').value = '';
+      document.getElementById('listTitleInput').focus();
+    }
+
+    function hideListDialog() {
+      document.getElementById('listDialog').classList.add('hidden');
+      document.getElementById('listDialog').classList.remove('flex');
+    }
+
+    async function createList() {
+      const title = document.getElementById('listTitleInput').value.trim();
+      if (!title) return;
+      
+      await db.lists.add({ title, items: [], lastModified: Date.now() });
+      hideListDialog();
+      loadLists();
+      showStatus('列表已创建');
+    }
+
+    async function deleteList(id) {
+      if (!confirm('确定要删除这个列表吗？此操作不可恢复。')) return;
+      await db.lists.delete(id);
+      loadLists();
+      showStatus('列表已删除');
+    }
+
+    async function editList(id) {
+      const list = lists.find(l => l.id === id);
+      if (!list) return;
+      const newTitle = prompt('修改列表名称:', list.title);
+      if (newTitle && newTitle.trim()) {
+        await db.lists.update(id, { title: newTitle.trim(), lastModified: Date.now() });
+        loadLists();
+        showStatus('列表已更新');
+      }
+    }
+
+    // ========== Item Operations ==========
+    async function loadDetail(id) {
+      const list = await db.lists.get(id);
+      if (!list) return;
+      
+      document.getElementById('detailTitle').textContent = list.title;
+      document.getElementById('detailCount').textContent = `${(list.items || []).length} 个条目`;
+      renderItems(list);
+    }
+
+    function renderItems(list) {
+      const container = document.getElementById('itemsList');
+      const items = list.items || [];
+      
+      if (items.length === 0) {
+        container.innerHTML = '<div class="p-8 text-center text-[var(--muted)] text-sm">暂无条目，添加第一个吧！</div>';
+        return;
+      }
+      
+      container.innerHTML = items.map((item, idx) => `
+        <div class="p-3 border-b border-[var(--border)] last:border-b-0 flex items-center gap-3 hover:bg-[var(--accent)] transition-colors">
+          <input type="checkbox" class="checkbox" ${item.done ? 'checked' : ''} onchange="toggleItem(${idx})">
+          <span class="flex-1 ${item.done ? 'line-through text-[var(--muted)]' : ''}">${escapeHtml(item.text)}</span>
+          <button onclick="deleteItem(${idx})" class="btn-ghost text-red-500">删除</button>
+        </div>
+      `).join('');
+    }
+
+    async function addItem() {
+      const input = document.getElementById('newItemInput');
+      const text = input.value.trim();
+      if (!text || !currentListId) return;
+      
+      const list = await db.lists.get(currentListId);
+      if (!list) return;
+      
+      const items = list.items || [];
+      items.push({ text, done: false, createdAt: Date.now() });
+      
+      await db.lists.update(currentListId, { items, lastModified: Date.now() });
+      input.value = '';
+      loadDetail(currentListId);
+      showStatus('条目已添加');
+    }
+
+    async function toggleItem(idx) {
+      const list = await db.lists.get(currentListId);
+      if (!list) return;
+      
+      list.items[idx].done = !list.items[idx].done;
+      await db.lists.update(currentListId, { items: list.items, lastModified: Date.now() });
+      loadDetail(currentListId);
+    }
+
+    async function deleteItem(idx) {
+      const list = await db.lists.get(currentListId);
+      if (!list) return;
+      
+      list.items.splice(idx, 1);
+      await db.lists.update(currentListId, { items: list.items, lastModified: Date.now() });
+      loadDetail(currentListId);
+      showStatus('条目已删除');
+    }
+
+    // ========== Import/Export ==========
+    async function exportData() {
+      const data = await db.lists.toArray();
+      const json = JSON.stringify({ lists: data, exportedAt: new Date().toISOString() }, null, 2);
+      
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `listapp-export-${new Date().toISOString().slice(0,10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showStatus('数据已导出');
+    }
+
+    function importData() {
+      document.getElementById('importDialog').classList.remove('hidden');
+      document.getElementById('importDialog').classList.add('flex');
+      document.getElementById('importDataInput').value = '';
+    }
+
+    function hideImportDialog() {
+      document.getElementById('importDialog').classList.add('hidden');
+      document.getElementById('importDialog').classList.remove('flex');
+    }
+
+    async function doImport() {
+      try {
+        const json = document.getElementById('importDataInput').value.trim();
+        const data = JSON.parse(json);
+        
+        if (!data.lists || !Array.isArray(data.lists)) throw new Error('无效的数据格式');
+        
+        for (const list of data.lists) {
+          await db.lists.add({
+            title: list.title,
+            items: list.items || [],
+            lastModified: Date.now()
+          });
+        }
+        
+        hideImportDialog();
+        loadLists();
+        showStatus(`成功导入 ${data.lists.length} 个列表`);
+      } catch (e) {
+        alert('导入失败：' + e.message);
+      }
+    }
+
+    // ========== Utilities ==========
+    function showStatus(msg) {
+      const el = document.getElementById('status');
+      el.textContent = msg;
+      setTimeout(() => el.textContent = '', 3000);
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // ========== Init ==========
+    document.getElementById('listTitleInput').addEventListener('keydown', e => {
+      if (e.key === 'Enter') createList();
+    });
+
+    loadLists();
+  </script>
+</body>
+</html>
